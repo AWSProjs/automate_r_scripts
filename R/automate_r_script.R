@@ -152,10 +152,47 @@ format_prediction_to_percent <- function(sheet, pos){
 ## Automated script for prediction
 ##---------------------------------------------------------------------------##
 
-## Capture the data of new patients in sheet 1
-new_patients <- patient_data |>
-  anti_join(patient_data_with_pred |>
-              select("patient_id"))
+## Find changes in the raw data
+
+patient_with_pred <-
+  patient_data |>
+  inner_join(patient_data_with_pred |> select("patient_id")) |>
+  pull(patient_id)
+
+patient_raw_long <-
+  patient_data |>
+  filter(patient_id %in% patient_with_pred) |>
+  mutate(across(-"patient_id", as.character)) |>
+  pivot_longer(cols = -"patient_id", values_to = "value_raw")
+
+patient_with_pred_long <-
+  patient_data_with_pred |>
+  filter(patient_id %in% patient_with_pred) |>
+  mutate(across(-"patient_id", as.character)) |>
+  pivot_longer(cols = -"patient_id", values_to = "value_pred")
+
+
+id_with_change <-
+  patient_raw_long |>
+  left_join(patient_with_pred_long) |>
+  filter(value_raw != value_pred) |>
+  distinct(patient_id) |>
+  pull()
+
+## If there is a change, remove the old record
+if(length(id_with_change) > 0) {
+  ## When there's a change in previously predicted data,
+  ## Add it to new prediction data and remove old record.
+  
+  new_patients <-
+    patient_data |>
+    filter(patient_id %in% id_with_change) |>
+    bind_rows(new_patients)
+  
+  patient_data_with_pred <-
+    patient_data_with_pred |>
+    filter(!patient_id %in% id_with_change)
+}
 
 ## If there is a new patient, then make prediction and 
 ## append to sheet 2
@@ -179,10 +216,23 @@ if(nrow(new_patients) > 0) {
     stop("Patient data and prediction database don't match")
   }
   
-  ## Append new patient and prediction to sheet 2
-  sheet_append(ss = sheet_id,
-               data = pred_data,
-               sheet = "Patient Data with Prediction")
+  ## Overwrite previous patient data and add new prediction to sheet 2
+  if(length(id_with_change) > 0) {
+    data_to_send <-
+      patient_data_with_pred |>
+      bind_rows(pred_data) |>
+      arrange(patient_id)
+    
+    ## Overwrite old patient and prediction to sheet 2
+    sheet_write(ss = sheet_id,
+                data = data_to_send,
+                sheet = "Patient Data with Prediction")
+  } else {
+    ## Append new patient and prediction to sheet 2
+    sheet_append(ss = sheet_id,
+                 data = pred_data,
+                 sheet = "Patient Data with Prediction")
+  }
   
   ## Format the text col (i.e 0.564 -> 56%)
   format_prediction_to_percent(sheet_id, pos = "N")
