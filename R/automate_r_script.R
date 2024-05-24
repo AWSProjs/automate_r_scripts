@@ -152,6 +152,12 @@ format_prediction_to_percent <- function(sheet, pos){
 ## Automated script for prediction
 ##---------------------------------------------------------------------------##
 
+## Capture the data of new patients in sheet 1
+new_patients <- patient_data |>
+  anti_join(patient_data_with_pred |>
+              select("patient_id"))
+
+
 ## Find changes in the raw data
 
 patient_with_pred <-
